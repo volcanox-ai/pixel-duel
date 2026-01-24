@@ -3,7 +3,12 @@ const app = express();
 const http = require('http');
 const server = http.createServer(app);
 const { Server } = require("socket.io");
-const io = new Server(server);
+const io = new Server(server, {
+  cors: {
+    origin: ["https://volcanox-ai.itch.io", "https://html6-games.itch.zone"],
+    methods: ["GET", "POST"]
+  }
+});
 
 app.use(express.static(__dirname));
 
@@ -69,4 +74,5 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(3000, () => console.log("Serveur prêt sur port 3000"));
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Serveur prêt sur port ${PORT}`));
