@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Pixel Duel - Online Rooms</title>
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <style>
         body { margin: 0; background: #050505; color: white; font-family: 'Press Start 2P', cursive; height: 100vh; width: 100vw; overflow: hidden; display: flex; align-items: center; justify-content: center; user-select: none; }
@@ -76,7 +76,7 @@
     </div>
 
     <script>
-        const socket = io();
+        const socket = io("https://pixel-duel.onrender.com");
         let myPlayerId = null, otherPlayerId = null, gameActive = false, isPaused = true, keys = {};
         let remappingAction = null;
 
