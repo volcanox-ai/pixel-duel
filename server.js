@@ -5,7 +5,7 @@ const server = http.createServer(app);
 const { Server } = require("socket.io");
 const io = new Server(server, {
   cors: {
-    origin: ["https://volcanox-ai.itch.io", "https://html6-games.itch.zone"],
+    origin: ["https://volcanox-ai.itch.io", "https://volcanox-ai.itch.io/pixel-duel-online"],
     methods: ["GET", "POST"]
   }
 });
