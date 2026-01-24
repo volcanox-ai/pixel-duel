@@ -1,0 +1,374 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Pixel Duel - Online Rooms</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body { margin: 0; background: #050505; color: white; font-family: 'Press Start 2P', cursive; height: 100vh; width: 100vw; overflow: hidden; display: flex; align-items: center; justify-content: center; user-select: none; }
+        #game-wrapper { position: relative; border: 4px solid #333; background: #080808; box-shadow: 0 0 50px rgba(0,0,0,0.5); }
+        canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+        .ui { position: absolute; top: 20px; width: 100%; display: flex; justify-content: space-between; padding: 0 60px; box-sizing: border-box; font-size: 24px; pointer-events: none; z-index: 10; text-shadow: 0 0 5px black; }
+        #p1-score { color: #FF0055; text-shadow: 0 0 10px #FF0055; } 
+        #p2-score { color: #00CCFF; text-shadow: 0 0 10px #00CCFF; }
+        #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; text-align: center; backdrop-filter: blur(5px); }
+        .menu-box { background: #111; border: 4px solid #444; padding: 30px; display: flex; flex-direction: column; gap: 15px; min-width: 400px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        
+        input[type="text"], input[type="password"] { background: #000; border: 2px solid #444; color: white; padding: 12px; font-family: 'Press Start 2P'; font-size: 10px; outline: none; }
+        button { background: #333; color: white; border: none; padding: 15px; font-family: 'Press Start 2P'; cursor: pointer; font-size: 10px; transition: 0.2s; }
+        button:hover { background: #555; transform: scale(1.05); }
+        button:active { transform: scale(0.95); }
+        
+        .room-item { background: #222; padding: 10px; margin: 5px 0; display: flex; justify-content: space-between; align-items: center; font-size: 8px; border: 1px solid #444; }
+        #error-msg { color: #FF0055; font-size: 10px; margin-top: 15px; height: 20px; }
+        .scanlines { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06)); background-size: 100% 4px, 3px 100%; pointer-events: none; z-index: 20; }
+        
+        #settings-modal { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #1a1a1a; border: 4px solid #00CCFF; padding: 20px; z-index: 200; display: none; width: 500px; box-shadow: 0 0 30px #00CCFF; }
+        .settings-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 10px; }
+        input[type=range] { width: 150px; cursor: pointer; }
+        .key-btn { width: 120px; background: #000; border: 2px solid #555; color: #00CCFF; }
+        .key-btn.listening { background: #FF0055; border-color: #fff; color: white; animation: pulse 0.5s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+        .close-btn { background: #FF0055; margin-top: 20px; width: 100%; }
+    </style>
+</head>
+<body>
+    <div id="game-wrapper">
+        <div id="overlay">
+            <h1 style="font-size: 20px; margin-bottom: 20px;">PIXEL DUEL ONLINE</h1>
+            <div id="main-menu" class="menu-box">
+                <input type="text" id="room-name" placeholder="NOM DU SALON">
+                <input type="password" id="room-pass" placeholder="MOT DE PASSE (OPTIONNEL)">
+                <button onclick="createRoom()">CRÉER SALON</button>
+                <div style="border-top: 2px solid #333; margin: 10px 0;"></div>
+                <button onclick="toggleSettings()" style="background: #444;">⚙️ PARAMÈTRES</button>
+                <div style="font-size: 8px; color: #888; margin: 10px 0 5px 0;">SALONS PUBLICS :</div>
+                <div id="rooms-list" style="max-height: 120px; overflow-y: auto;"></div>
+                <button onclick="refreshRooms()" style="font-size: 8px; background: #222;">RAFRAÎCHIR</button>
+                <div id="error-msg"></div>
+            </div>
+            <div id="lobby" class="menu-box" style="display: none;">
+                <div id="status-text">ATTENTE ADVERSAIRE...</div>
+                <button id="ready-btn" onclick="readyUp()" style="display:none; background: #00FF55; color: #000; margin-top: 20px;">JE SUIS PRÊT !</button>
+                <button onclick="toggleSettings()" style="background: #444; margin-top:10px;">⚙️ PARAMÈTRES</button>
+            </div>
+        </div>
+
+        <div id="settings-modal">
+            <h2 style="text-align:center; margin-bottom:20px; color:#00CCFF; font-size:16px;">CONFIGURATIONS</h2>
+            <div class="settings-row"><span>VOLUME MUSIQUE</span><input type="range" min="0" max="1" step="0.1" id="vol-music" onchange="updateVolume()"></div>
+            <div class="settings-row"><span>VOLUME EFFETS</span><input type="range" min="0" max="1" step="0.1" id="vol-sfx" onchange="updateVolume()"></div>
+            <hr style="border: 1px solid #333; margin: 15px 0;">
+            <div class="settings-row"><span>HAUT / SAUT</span> <button id="btn-up" class="key-btn" onclick="remapKey('up')">W</button></div>
+            <div class="settings-row"><span>GAUCHE</span> <button id="btn-left" class="key-btn" onclick="remapKey('left')">A</button></div>
+            <div class="settings-row"><span>BAS</span> <button id="btn-down" class="key-btn" onclick="remapKey('down')">S</button></div>
+            <div class="settings-row"><span>DROITE</span> <button id="btn-right" class="key-btn" onclick="remapKey('right')">D</button></div>
+            <div class="settings-row"><span>TIRER</span> <button id="btn-shoot" class="key-btn" onclick="remapKey('shoot')">F</button></div>
+            <div class="settings-row"><span>BOUCLIER</span> <button id="btn-shield" class="key-btn" onclick="remapKey('shield')">G</button></div>
+            <div class="settings-row"><span>SORT SPÉCIAL</span> <button id="btn-spell" class="key-btn" onclick="remapKey('spell')">H</button></div>
+            <button class="close-btn" onclick="toggleSettings()">FERMER & SAUVEGARDER</button>
+        </div>
+
+        <div class="ui"><span id="p1-score">P1: 0</span><span id="p2-score">P2: 0</span></div>
+        <canvas id="canvas" width="1200" height="700"></canvas>
+        <div class="scanlines"></div>
+    </div>
+
+    <script>
+        const socket = io();
+        let myPlayerId = null, otherPlayerId = null, gameActive = false, isPaused = true, keys = {};
+        let remappingAction = null;
+
+        const defaultControls = { up: 'w', left: 'a', down: 's', right: 'd', shoot: 'f', shield: 'g', spell: 'h' };
+        let settings = { sfxVolume: 0.5, musicVolume: 0.3, controls: JSON.parse(JSON.stringify(defaultControls)) };
+
+        document.getElementById('vol-music').value = settings.musicVolume;
+        document.getElementById('vol-sfx').value = settings.sfxVolume;
+        updateKeyButtons();
+
+        function toggleSettings() {
+            const modal = document.getElementById('settings-modal');
+            modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
+        }
+        function updateVolume() {
+            settings.musicVolume = parseFloat(document.getElementById('vol-music').value);
+            settings.sfxVolume = parseFloat(document.getElementById('vol-sfx').value);
+        }
+        function remapKey(action) {
+            remappingAction = action;
+            const btn = document.getElementById('btn-' + action);
+            btn.innerText = "APPUYEZ...";
+            btn.classList.add('listening');
+        }
+        function updateKeyButtons() {
+            for (const [action, key] of Object.entries(settings.controls)) {
+                const btn = document.getElementById('btn-' + action);
+                if(btn) btn.innerText = key.toUpperCase();
+            }
+        }
+
+        // --- RESEAU ---
+        function createRoom() {
+            const name = document.getElementById('room-name').value;
+            const pass = document.getElementById('room-pass').value;
+            if(!name) return;
+            socket.emit('create-room', { name, password: pass });
+        }
+        function joinRoom(name, isProtected) {
+            let pass = isProtected ? prompt("Mot de passe :") : "";
+            if (isProtected && pass === null) return;
+            socket.emit('join-room', { name, password: pass });
+        }
+        function refreshRooms() { socket.emit('get-rooms'); }
+        function readyUp() {
+            document.getElementById('ready-btn').style.display = 'none';
+            document.getElementById('status-text').innerText = "EN ATTENTE DE L'AUTRE...";
+            socket.emit('player-ready', myPlayerId);
+        }
+
+        socket.on('rooms-list', (list) => {
+            const container = document.getElementById('rooms-list');
+            container.innerHTML = list.length === 0 ? "<div style='font-size:8px;'>Aucun salon public</div>" : "";
+            list.forEach(r => {
+                const lock = r.protected ? "🔒 " : "🔓 ";
+                container.innerHTML += `<div class="room-item">${lock}${r.name} (${r.count}/2) <button onclick="joinRoom('${r.name}', ${r.protected})" style="padding:5px; font-size:8px;">JOIN</button></div>`;
+            });
+        });
+
+        socket.on('player-assigned', (id) => {
+            myPlayerId = id; otherPlayerId = id === 1 ? 2 : 1;
+            document.getElementById('main-menu').style.display = 'none';
+            document.getElementById('lobby').style.display = 'flex';
+            document.getElementById('status-text').innerText = `VOUS ÊTES LE JOUEUR ${id}`;
+        });
+
+        socket.on('player-status', (players) => {
+            if(players.length >= 2) {
+                document.getElementById('status-text').innerText = "ADVERSAIRE PRÊT !";
+                document.getElementById('ready-btn').style.display = 'block';
+            }
+        });
+
+        socket.on('error-msg', (msg) => { document.getElementById('error-msg').innerText = msg; });
+
+        socket.on('start-game', () => {
+            document.getElementById('overlay').style.display = 'none';
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+            Music.start(); isPaused = false; gameActive = true; update();
+        });
+
+        // --- RÉCEPTION DE LA MORT SYNCHRONISÉE ---
+        socket.on('player-killed', (targetId) => {
+            let victim = targetId === 1 ? p1 : p2;
+            executeDeath(victim);
+        });
+
+        socket.on('opponent-disconnected', () => { alert("Adversaire déconnecté !"); location.reload(); });
+        refreshRooms();
+
+        // --- AUDIO ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const Music = {
+            nextNoteTime: 0, noteIndex: 0, isPlaying: false, tempo: 0.18,
+            melody: [ {f: 220, t: 'square'}, {f: 0, t: 'rest'}, {f: 220, t: 'square'}, {f: 261, t: 'square'}, {f: 330, t: 'square'}, {f: 261, t: 'square'}, {f: 440, t: 'triangle'}, {f: 0, t: 'rest'}, {f: 330, t: 'square'}, {f: 0, t: 'rest'}, {f: 330, t: 'square'}, {f: 392, t: 'square'}, {f: 440, t: 'square'}, {f: 392, t: 'square'}, {f: 293, t: 'triangle'}, {f: 0, t: 'rest'} ],
+            bass: [110, 110, 146, 146, 164, 164, 98, 98],
+            schedule: function() { if(!this.isPlaying) return; while (this.nextNoteTime < audioCtx.currentTime + 0.1) { this.playNote(this.nextNoteTime); this.nextNoteTime += this.tempo; this.noteIndex = (this.noteIndex + 1) % 16; } requestAnimationFrame(this.schedule.bind(this)); },
+            playNote: function(time) { if(settings.musicVolume <= 0.01) return; let m = this.melody[this.noteIndex]; if(m && m.f > 0) { let osc = audioCtx.createOscillator(); let g = audioCtx.createGain(); osc.type = m.t; osc.frequency.value = m.f; g.gain.setValueAtTime(0.08 * settings.musicVolume, time); g.gain.setTargetAtTime(0, time, 0.1); osc.connect(g); g.connect(audioCtx.destination); osc.start(time); osc.stop(time + 0.3); } if(this.noteIndex % 2 === 0) { let bFreq = this.bass[(this.noteIndex/2) % this.bass.length]; let oscB = audioCtx.createOscillator(); let gB = audioCtx.createGain(); oscB.type = 'sawtooth'; oscB.frequency.value = bFreq; gB.gain.setValueAtTime(0.12 * settings.musicVolume, time); gB.gain.setTargetAtTime(0, time, 0.2); let f = audioCtx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 400; oscB.connect(f); f.connect(gB); gB.connect(audioCtx.destination); oscB.start(time); oscB.stop(time + 0.3); } if(this.noteIndex % 4 === 0) { let oscK = audioCtx.createOscillator(); let gK = audioCtx.createGain(); oscK.frequency.setValueAtTime(150, time); oscK.frequency.exponentialRampToValueAtTime(0.01, time + 0.1); gK.gain.setValueAtTime(0.3 * settings.musicVolume, time); gK.gain.exponentialRampToValueAtTime(0.01, time + 0.1); oscK.connect(gK); gK.connect(audioCtx.destination); oscK.start(time); oscK.stop(time + 0.1); } },
+            start: function() { if(this.isPlaying) return; this.isPlaying = true; this.nextNoteTime = audioCtx.currentTime + 0.1; this.schedule(); }
+        };
+
+        function playSound(f, t, d, v, s = 0) { if (audioCtx.state === 'suspended') audioCtx.resume(); const globalVol = v * settings.sfxVolume; if (globalVol <= 0.01) return; const osc = audioCtx.createOscillator(); const g = audioCtx.createGain(); osc.type = t; osc.frequency.setValueAtTime(f, audioCtx.currentTime); if (s) osc.frequency.exponentialRampToValueAtTime(s, audioCtx.currentTime + d); g.gain.setValueAtTime(globalVol, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d); osc.connect(g); g.connect(audioCtx.destination); osc.start(); osc.stop(audioCtx.currentTime + d); }
+        const SFX = { jump:()=>playSound(150,'triangle',0.1,0.2,300), shoot:()=>playSound(400,'square',0.1,0.05,100), sniper:()=>playSound(800,'sawtooth',0.3,0.05,50), shotgun:()=>playSound(100,'sawtooth',0.2,0.3,20), dash:()=>playSound(200,'sawtooth',0.2,0.2,800), laser:()=>playSound(1200,'sine',0.5,0.2,800), shield:()=>playSound(900,'sine',0.3,0.1,1200), death:()=>playSound(60,'sawtooth',0.6,0.4,10), pickup:()=>playSound(1000,'triangle',0.1,0.1,1500) };
+
+        // --- MOTEUR ---
+        const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
+        const COLORS = { p1: '#FF0055', p2: '#00CCFF', gold: '#FFFF00', purple: '#FF00FF', shotgun: '#00FFFF', green: '#00FF00', fire: '#FF4400', white: '#FFFFFF' };
+        let p1Score = 0, p2Score = 0, platforms = [], bullets = [], drops = [], lasers = [], particles = [], dropTimer = 0, roundActive = true, winnerText = "";
+
+        function createParticles(x, y, color, count, speedVar, lifeVar, size = 4) { for(let i=0; i<count; i++) particles.push({ x: x, y: y, vx: (Math.random()-0.5) * speedVar, vy: (Math.random()-0.5) * speedVar, color: color, life: lifeVar + Math.random()*20, size: size }); }
+
+        class Platform { constructor(x, y, w, h, isWall = false) { this.x = x; this.y = y; this.w = w; this.h = h; this.isWall = isWall; } draw() { ctx.shadowBlur = 0; ctx.fillStyle = this.isWall ? "#1e1a1a" : "#1a1a1e"; ctx.fillRect(this.x, this.y, this.w, this.h); ctx.strokeStyle = "rgba(255, 255, 255, 0.05)"; ctx.lineWidth = 2; ctx.beginPath(); for(let i=0; i<=this.w; i+=25) { ctx.moveTo(this.x+i, this.y); ctx.lineTo(this.x+i, this.y+this.h); } for(let j=0; j<=this.h; j+=25) { ctx.moveTo(this.x, this.y+j); ctx.lineTo(this.x+this.w, this.y+j); } ctx.stroke(); ctx.lineWidth = 2; ctx.strokeStyle = this.isWall ? "#4a3333" : "#33444a"; ctx.strokeRect(this.x, this.y, this.w, this.h); ctx.fillStyle = this.isWall ? "#664444" : "#445566"; if(!this.isWall) ctx.fillRect(this.x, this.y, this.w, 4); } }
+
+        class Player {
+            constructor(x, y, color, id) { this.x = x; this.y = y; this.w = 32; this.h = 48; this.color = color; this.id = id; this.vx = 0; this.vy = 0; this.facingRight = (id === 1); this.onGround = false; this.isDead = false; this.weaponType = 'basic'; this.lastShot = 0; this.lastShieldTime = 0; this.currentSpell = null; this.animFrame = 0; }
+            isShielding() { return !this.isDead && (Date.now() - this.lastShieldTime < 200); }
+            canShield() { return !this.isDead && (Date.now() - this.lastShieldTime > 5000); }
+            update() {
+                if (this.isDead || this.id !== myPlayerId) return;
+                const c = settings.controls;
+                if (keys[c.left]) { this.vx = -7; this.facingRight = false; }
+                else if (keys[c.right]) { this.vx = 7; this.facingRight = true; }
+                else this.vx *= 0.85;
+                if (Math.abs(this.vx) > 0.1 && this.onGround) this.animFrame += 0.2;
+                let nx = this.x + this.vx; let hHit = false;
+                platforms.forEach(p => { if (p.isWall && nx + this.w > p.x && nx < p.x + p.w && this.y + this.h > p.y && this.y < p.y + p.h) hHit = true; });
+                if (!hHit) this.x = nx; else this.vx = 0;
+                let oy = this.y; this.vy += 0.55; this.y += this.vy; this.onGround = false;
+                if (this.y + this.h > canvas.height) { this.y = canvas.height - this.h; this.vy = 0; this.onGround = true; }
+                platforms.forEach(p => { if (this.vy > 0 && oy + this.h <= p.y && this.y + this.h >= p.y && this.x + this.w > p.x && this.x < p.x + p.w) { if (!keys[c.down] || p.isWall) { this.y = p.y - this.h; this.vy = 0; this.onGround = true; } } if (p.isWall && this.y < p.y + p.h && oy >= p.y + p.h && this.x + this.w > p.x && this.x < p.x + p.w) { this.y = p.y + p.h; this.vy = 0; } });
+                if (this.x < 0) this.x = 0; if (this.x + this.w > canvas.width) this.x = canvas.width - this.w;
+            }
+            draw() {
+                if (this.isDead) return; 
+                let bob = Math.sin(this.animFrame) * 2;
+                ctx.shadowBlur = 15; ctx.shadowColor = this.color;
+                let shieldR = Math.min((Date.now() - this.lastShieldTime) / 5000, 1);
+                ctx.fillStyle = shieldR === 1 ? COLORS.shotgun : "white"; ctx.fillRect(this.x, this.y - 12 + bob, 32 * shieldR, 4);
+                if (this.isShielding()) { ctx.shadowBlur = 20; ctx.shadowColor = "cyan"; ctx.strokeStyle = "cyan"; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(this.x+16, this.y+24, 38, 0, Math.PI*2); ctx.stroke(); }
+                ctx.fillStyle = this.color; ctx.fillRect(this.x, this.y + 14 + bob, this.w, 20); 
+                ctx.fillStyle = "#ffccaa"; ctx.fillRect(this.x + 4, this.y + bob, 24, 18); 
+                ctx.fillStyle = this.color; ctx.fillRect(this.x + 4, this.y + bob - 6, 24, 6); 
+                ctx.fillStyle = "white"; ctx.fillRect(this.facingRight?this.x+20:this.x+4, this.y+6+bob, 8, 6); 
+                let gColor = this.weaponType==='mitraillette'?COLORS.gold:(this.weaponType==='sniper'?COLORS.purple:(this.weaponType==='shotgun'?COLORS.shotgun:'#888'));
+                let gL = this.weaponType==='sniper'?28:16; 
+                ctx.shadowBlur = 10; ctx.shadowColor = gColor; ctx.fillStyle = gColor; ctx.fillRect(this.facingRight?this.x+20:this.x+12-gL, this.y+24+bob, gL, 6);
+                if (this.currentSpell) { ctx.fillStyle = this.currentSpell === 'dash' ? COLORS.green : (this.currentSpell === 'fire' ? COLORS.fire : "white"); ctx.shadowColor = ctx.fillStyle; ctx.beginPath(); ctx.arc(this.x + 16, this.y - 22, 6, 0, Math.PI*2); ctx.fill(); }
+                ctx.shadowBlur = 0; 
+            }
+        }
+
+        let p1 = new Player(100, 600, COLORS.p1, 1), p2 = new Player(1060, 600, COLORS.p2, 2);
+
+        socket.on('remote-update', (data) => {
+            let p = data.id === 1 ? p1 : p2;
+            if (p.id !== myPlayerId) {
+                p.x = data.x; p.y = data.y; p.vx = data.vx; p.vy = data.vy;
+                p.facingRight = data.facingRight; p.animFrame = data.animFrame;
+                p.isDead = data.isDead; p.weaponType = data.weaponType;
+            }
+        });
+
+        socket.on('remote-action', (data) => {
+            let p = data.id === 1 ? p1 : p2;
+            if(data.type === 'shoot') shoot(p, true);
+            if(data.type === 'shield') { p.lastShieldTime = Date.now(); SFX.shield(); }
+            if(data.type === 'jump') { p.vy = -13.5; SFX.jump(); }
+            if(data.type === 'spell') { p.currentSpell = data.spellType; handleSpell(p, data.id===1?p2:p1, true); }
+        });
+
+        socket.on('remote-drop', (d) => { drops.push({x:d.x, y:d.y, vy:d.vy, type:d.type, color:d.color}); });
+
+        // --- EXECUTION DE LA MORT (Appelée par le serveur) ---
+        function executeDeath(v) {
+            if (!roundActive || v.isDead) return; 
+            SFX.death(); 
+            createParticles(v.x+v.w/2, v.y+v.h/2, v.color, 50, 12, 50);
+            v.isDead = true; v.currentSpell = null;
+            if (v.id === 1) { p2Score++; winnerText = "PLAYER 2 WINS!"; } else { p1Score++; winnerText = "PLAYER 1 WINS!"; }
+            document.getElementById('p1-score').innerText = "P1: " + p1Score; document.getElementById('p2-score').innerText = "P2: " + p2Score;
+            roundActive = false; 
+            setTimeout(() => { 
+                p1 = new Player(100, 600, COLORS.p1, 1); p2 = new Player(1060, 600, COLORS.p2, 2); 
+                bullets = []; drops = []; lasers = []; particles = []; winnerText = ""; roundActive = true; 
+            }, 1500);
+        }
+
+        window.onkeydown = (e) => {
+            const k = e.key.toLowerCase();
+            if (remappingAction) {
+                if (k !== 'escape') {
+                    settings.controls[remappingAction] = k;
+                    document.getElementById('btn-' + remappingAction).classList.remove('listening');
+                    remappingAction = null;
+                    updateKeyButtons();
+                }
+                return;
+            }
+            if(isPaused) return;
+            if (["backspace", "arrowdown", "arrowup", " "].includes(k)) e.preventDefault();
+            let myP = myPlayerId === 1 ? p1 : p2;
+            let c = settings.controls;
+            if (!keys[k] && !myP.isDead) {
+                if (k === c.up && myP.onGround) { myP.vy = -13.5; SFX.jump(); socket.emit('action-trigger', {id: myPlayerId, type: 'jump'}); } 
+                if (k === c.shield && myP.canShield()) { myP.lastShieldTime = Date.now(); SFX.shield(); socket.emit('action-trigger', {id: myPlayerId, type: 'shield'}); } 
+                if (k === c.spell && myP.currentSpell) { 
+                    socket.emit('action-trigger', {id: myPlayerId, type: 'spell', spellType: myP.currentSpell}); 
+                    handleSpell(myP, myPlayerId===1?p2:p1, false); 
+                }
+            }
+            keys[k] = true;
+        };
+        window.onkeyup = (e) => keys[e.key.toLowerCase()] = false;
+
+        function handleSpell(caster, target, remote) {
+            if (caster.currentSpell === 'dash') { caster.vy = -22; SFX.dash(); }
+            else if (caster.currentSpell === 'laser') { 
+                SFX.laser(); lasers.push({y:caster.y+24, xStart:caster.facingRight?caster.x+32:0, xEnd:caster.facingRight?1200:caster.x, life:10, color: COLORS.white});
+                if(!remote && caster.id === myPlayerId) { 
+                    if(caster.y+24 > target.y && caster.y+24 < target.y+48 && ((caster.facingRight && target.x > caster.x) || (!caster.facingRight && target.x < caster.x))) { 
+                        if(target.isShielding()) socket.emit('player-hit', caster.id); else socket.emit('player-hit', target.id); 
+                    } 
+                }
+            } else if (caster.currentSpell === 'fire') {
+                SFX.shoot(); let fireSize = 48;
+                let startX = caster.facingRight ? caster.x + caster.w : caster.x - fireSize;
+                let startY = caster.y + (caster.h/2) - (fireSize/2);
+                bullets.push({x: startX, y: startY, w: fireSize, h: fireSize, vx: caster.facingRight ? 8 : -8, vy: 0, color: COLORS.fire, owner: caster.id, active: true, isFire: true});
+                createParticles(startX + fireSize/2, startY + fireSize/2, COLORS.fire, 20, 5, 30);
+            }
+            caster.currentSpell = null;
+        }
+
+        function shoot(p, remote = false) {
+            if (p.isDead) return;
+            let now = Date.now();
+            let d = (p.weaponType==='mitraillette'?180:(p.weaponType==='sniper'?650:(p.weaponType==='shotgun'?850:500)));
+            let myShot = (!remote && myPlayerId === p.id && keys[settings.controls.shoot]);
+            if((now - p.lastShot > d || remote) && !p.isShielding()) {
+                if(myShot) socket.emit('action-trigger', {id: p.id, type: 'shoot'});
+                let bCol = (p.weaponType==='mitraillette') ? COLORS.gold : (p.weaponType==='sniper' ? COLORS.purple : COLORS.white);
+                if (p.weaponType === 'shotgun') { SFX.shotgun(); for(let i=-2; i<=2; i++) bullets.push({x:p.facingRight?p.x+32:p.x-8, y:p.y+24, w:12, h:12, vx:p.facingRight?15:-15, vy:i*1.5, color:bCol, owner:p.id, active:true}); } 
+                else { let s = p.weaponType==='sniper'?38:16; if(p.weaponType==='sniper') SFX.sniper(); else SFX.shoot(); bullets.push({x:p.facingRight?p.x+32:p.x-12, y:p.y+24, w:p.weaponType==='sniper'?35:18, h:p.weaponType==='sniper'?10:8, vx:p.facingRight?s:-s, vy:0, color:bCol, owner:p.id, active:true}); }
+                p.lastShot = now;
+            }
+        }
+
+        function update() {
+            if(isPaused) return; 
+            ctx.fillStyle = "#050505"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = "rgba(40, 40, 40, 0.2)"; ctx.lineWidth = 1; for(let x=0;x<1200;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,700);ctx.stroke();} for(let y=0;y<700;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(1200,y);ctx.stroke();}
+            
+            p1.update(); p2.update();
+            if(gameActive) {
+                let me = myPlayerId === 1 ? p1 : p2;
+                socket.emit('player-update', { id: myPlayerId, x: me.x, y: me.y, vx: me.vx, vy: me.vy, facingRight: me.facingRight, animFrame: me.animFrame, isDead: me.isDead, weaponType: me.weaponType });
+                if(keys[settings.controls.shoot]) shoot(me);
+            }
+
+            if (myPlayerId === 1 && roundActive && ++dropTimer > 200) {
+                let r = Math.random(), type = r<0.17?'mitraillette':r<0.34?'sniper':r<0.51?'shotgun':r<0.68?'dash':r<0.85?'laser':'fire';
+                let col = type==='mitraillette'?COLORS.gold:(type==='sniper'?COLORS.purple:(type==='shotgun'?COLORS.shotgun:(type==='dash'?COLORS.green:(type==='fire'?COLORS.fire:'white'))));
+                let drop = {x:100+Math.random()*1000, y:-20, vy:0, type, color:col};
+                drops.push(drop); socket.emit('spawn-drop', drop); dropTimer=0;
+            }
+
+            bullets.forEach((b, i) => {
+                b.x += b.vx; b.y += b.vy || 0;
+                platforms.forEach(p => { if(b.x + b.w > p.x && b.x < p.x+p.w && b.y + b.h > p.y && b.y < p.y+p.h) b.active=false; });
+                
+                [p1,p2].forEach(p => { 
+                    if(b.active && !p.isDead && b.x < p.x + p.w && b.x + b.w > p.x && b.y < p.y + p.h && b.y + b.h > p.y) { 
+                        if(p.isShielding()){ b.vx*=-1.2; b.owner=p.id; b.color=COLORS.shotgun; } 
+                        // --- COLLISION AUTORITAIRE : Seul le tireur valide le hit ---
+                        else if(b.owner!==p.id && b.owner === myPlayerId && roundActive) { 
+                            socket.emit('player-hit', p.id); 
+                            b.active = false; 
+                        } 
+                    } 
+                });
+                if(b.active){ ctx.shadowBlur = 10; ctx.shadowColor = b.color; ctx.fillStyle=b.color; ctx.fillRect(b.x, b.y, b.w, b.h); } else bullets.splice(i,1);
+            });
+
+            particles.forEach((pt, i) => { pt.x += pt.vx; pt.y += pt.vy; pt.vy += 0.2; ctx.fillStyle = pt.color; ctx.fillRect(pt.x, pt.y, pt.size, pt.size); if (--pt.life <= 0) particles.splice(i, 1); });
+            drops.forEach((d, i) => { d.vy += 0.5; d.y += d.vy; platforms.forEach(p => { if(d.y+20 > p.y && d.y < p.y+p.h && d.x+20 > p.x && d.x < p.x+p.w) { d.y=p.y-20; d.vy=0; }}); [p1,p2].forEach(p => { if(!p.isDead && Math.abs(p.x-d.x)<30 && Math.abs(p.y-d.y)<30){ if(['mitraillette','sniper','shotgun'].includes(d.type)) p.weaponType=d.type; else p.currentSpell=d.type; drops.splice(i,1); SFX.pickup(); }}); ctx.fillStyle = d.color; ctx.fillRect(d.x, d.y, 24, 24); });
+            lasers.forEach((l, i) => { ctx.strokeStyle="white"; ctx.lineWidth=l.life; ctx.beginPath(); ctx.moveTo(l.xStart, l.y); ctx.lineTo(l.xEnd, l.y); ctx.stroke(); if(--l.life<=0) lasers.splice(i,1); });
+            platforms.forEach(p => p.draw()); p1.draw(); p2.draw();
+            if (winnerText) { ctx.fillStyle = "white"; ctx.textAlign = "center"; ctx.fillText(winnerText, 600, 350); }
+            requestAnimationFrame(update);
+        }
+
+        platforms = [ new Platform(0, 680, 1200, 20), new Platform(150, 540, 300, 15), new Platform(750, 540, 300, 15), new Platform(560, 500, 80, 180, true), new Platform(0, 410, 200, 15), new Platform(1000, 410, 200, 15), new Platform(400, 410, 400, 15), new Platform(400, 360, 20, 50, true), new Platform(780, 360, 20, 50, true), new Platform(150, 280, 250, 15), new Platform(800, 280, 250, 15), new Platform(525, 250, 150, 15), new Platform(0, 150, 350, 15), new Platform(850, 150, 350, 15), new Platform(330, 100, 20, 50, true), new Platform(850, 100, 20, 50, true) ];
+    </script>
+</body>
+</html>
