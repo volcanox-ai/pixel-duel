@@ -34,6 +34,9 @@
     </style>
 </head>
 <body>
+    <div id="server-status" style="position: fixed; top: 0; left: 0; width: 100%; background: #ffaa00; color: black; text-align: center; padding: 10px; font-size: 12px; z-index: 9999; font-family: 'Press Start 2P', cursive;">
+         ⏳ CONNEXION AU SERVEUR (PEUT PRENDRE 1 MIN)...
+    </div>
     <div id="game-wrapper">
         <div id="overlay">
             <h1 style="font-size: 20px; margin-bottom: 20px;">PIXEL DUEL ONLINE</h1>
@@ -77,6 +80,32 @@
 
     <script>
         const socket = io("https://pixel-duel.onrender.com");
+        const statusDiv = document.getElementById('server-status');
+
+// Quand le serveur répond enfin
+socket.on('connect', () => {
+    statusDiv.innerHTML = "✅ SERVEUR EN LIGNE !";
+    statusDiv.style.background = "#00FF55"; // Vert
+    
+    // On cache le message après 3 secondes
+    setTimeout(() => {
+        statusDiv.style.display = 'none';
+    }, 3000);
+});
+
+// Quand le serveur dort ou ne répond pas
+socket.on('connect_error', () => {
+    statusDiv.innerHTML = "💤 LE SERVEUR SE RÉVEILLE... PATIENTEZ (MAX 50s)";
+    statusDiv.style.background = "#FF4400"; // Orange/Rouge
+    statusDiv.style.display = 'block';
+});
+
+// Si on perd la connexion en plein jeu
+socket.on('disconnect', () => {
+    statusDiv.innerHTML = "❌ DÉCONNECTÉ DU SERVEUR";
+    statusDiv.style.background = "#FF0000"; // Rouge
+    statusDiv.style.display = 'block';
+});
         let myPlayerId = null, otherPlayerId = null, gameActive = false, isPaused = true, keys = {};
         let remappingAction = null;
 
