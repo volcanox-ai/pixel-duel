@@ -79,57 +79,80 @@
     </div>
 
     <script>
+        // Remplace bien cette URL si elle change sur Render
         const socket = io("https://pixel-duel.onrender.com");
         const statusDiv = document.getElementById('server-status');
 
-// Quand le serveur répond enfin
-socket.on('connect', () => {
-    statusDiv.innerHTML = "✅ SERVEUR EN LIGNE !";
-    statusDiv.style.background = "#00FF55"; // Vert
-    
-    // On cache le message après 3 secondes
-    setTimeout(() => {
-        statusDiv.style.display = 'none';
-    }, 3000);
-});
+        socket.on('connect', () => {
+            statusDiv.innerHTML = "✅ SERVEUR EN LIGNE !";
+            statusDiv.style.background = "#00FF55"; 
+            setTimeout(() => { statusDiv.style.display = 'none'; }, 3000);
+        });
 
-// Quand le serveur dort ou ne répond pas
-socket.on('connect_error', () => {
-    statusDiv.innerHTML = "💤 LE SERVEUR SE RÉVEILLE... PATIENTEZ (MAX 50s)";
-    statusDiv.style.background = "#FF4400"; // Orange/Rouge
-    statusDiv.style.display = 'block';
-});
+        socket.on('connect_error', () => {
+            statusDiv.innerHTML = "💤 LE SERVEUR SE RÉVEILLE... PATIENTEZ (MAX 50s)";
+            statusDiv.style.background = "#FF4400";
+            statusDiv.style.display = 'block';
+        });
 
-// Si on perd la connexion en plein jeu
-socket.on('disconnect', () => {
-    statusDiv.innerHTML = "❌ DÉCONNECTÉ DU SERVEUR";
-    statusDiv.style.background = "#FF0000"; // Rouge
-    statusDiv.style.display = 'block';
-});
+        socket.on('disconnect', () => {
+            statusDiv.innerHTML = "❌ DÉCONNECTÉ DU SERVEUR";
+            statusDiv.style.background = "#FF0000";
+            statusDiv.style.display = 'block';
+        });
+
         let myPlayerId = null, otherPlayerId = null, gameActive = false, isPaused = true, keys = {};
         let remappingAction = null;
 
         const defaultControls = { up: 'w', left: 'a', down: 's', right: 'd', shoot: 'f', shield: 'g', spell: 'h' };
+        // On initialise, mais on va tout de suite essayer de charger la sauvegarde
         let settings = { sfxVolume: 0.5, musicVolume: 0.3, controls: JSON.parse(JSON.stringify(defaultControls)) };
 
-        document.getElementById('vol-music').value = settings.musicVolume;
-        document.getElementById('vol-sfx').value = settings.sfxVolume;
-        updateKeyButtons();
+        // --- NOUVEAU : SYSTÈME DE SAUVEGARDE ---
+        function saveSettings() {
+            localStorage.setItem('pixelDuelSettings', JSON.stringify(settings));
+        }
+
+        function loadSettings() {
+            const saved = localStorage.getItem('pixelDuelSettings');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    // On garde les valeurs par défaut si certaines manquent
+                    if(parsed.sfxVolume !== undefined) settings.sfxVolume = parsed.sfxVolume;
+                    if(parsed.musicVolume !== undefined) settings.musicVolume = parsed.musicVolume;
+                    if(parsed.controls) settings.controls = parsed.controls;
+                } catch(e) {
+                    console.error("Erreur de chargement des paramètres", e);
+                }
+            }
+            // On met à jour les sliders et les boutons
+            document.getElementById('vol-music').value = settings.musicVolume;
+            document.getElementById('vol-sfx').value = settings.sfxVolume;
+            updateKeyButtons();
+        }
+
+        // On lance le chargement au démarrage
+        loadSettings();
 
         function toggleSettings() {
             const modal = document.getElementById('settings-modal');
             modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
         }
+
         function updateVolume() {
             settings.musicVolume = parseFloat(document.getElementById('vol-music').value);
             settings.sfxVolume = parseFloat(document.getElementById('vol-sfx').value);
+            saveSettings(); // On sauvegarde dès qu'on change le volume
         }
+
         function remapKey(action) {
             remappingAction = action;
             const btn = document.getElementById('btn-' + action);
             btn.innerText = "APPUYEZ...";
             btn.classList.add('listening');
         }
+
         function updateKeyButtons() {
             for (const [action, key] of Object.entries(settings.controls)) {
                 const btn = document.getElementById('btn-' + action);
@@ -187,7 +210,6 @@ socket.on('disconnect', () => {
             Music.start(); isPaused = false; gameActive = true; update();
         });
 
-        // --- RÉCEPTION DE LA MORT SYNCHRONISÉE ---
         socket.on('player-killed', (targetId) => {
             let victim = targetId === 1 ? p1 : p2;
             executeDeath(victim);
@@ -278,7 +300,6 @@ socket.on('disconnect', () => {
 
         socket.on('remote-drop', (d) => { drops.push({x:d.x, y:d.y, vy:d.vy, type:d.type, color:d.color}); });
 
-        // --- EXECUTION DE LA MORT (Appelée par le serveur) ---
         function executeDeath(v) {
             if (!roundActive || v.isDead) return; 
             SFX.death(); 
@@ -301,6 +322,7 @@ socket.on('disconnect', () => {
                     document.getElementById('btn-' + remappingAction).classList.remove('listening');
                     remappingAction = null;
                     updateKeyButtons();
+                    saveSettings(); // ON SAUVEGARDE LA TOUCHE
                 }
                 return;
             }
@@ -379,7 +401,6 @@ socket.on('disconnect', () => {
                 [p1,p2].forEach(p => { 
                     if(b.active && !p.isDead && b.x < p.x + p.w && b.x + b.w > p.x && b.y < p.y + p.h && b.y + b.h > p.y) { 
                         if(p.isShielding()){ b.vx*=-1.2; b.owner=p.id; b.color=COLORS.shotgun; } 
-                        // --- COLLISION AUTORITAIRE : Seul le tireur valide le hit ---
                         else if(b.owner!==p.id && b.owner === myPlayerId && roundActive) { 
                             socket.emit('player-hit', p.id); 
                             b.active = false; 
