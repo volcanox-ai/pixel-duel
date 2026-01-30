@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Pixel Duel - Map Rotation</title>
+    <title>Pixel Duel - Fixed Spawns</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <style>
@@ -12,22 +12,16 @@
         .ui { position: absolute; top: 20px; width: 100%; display: flex; justify-content: space-between; padding: 0 60px; box-sizing: border-box; font-size: 24px; pointer-events: none; z-index: 10; text-shadow: 0 0 5px black; }
         #p1-score { color: #FF0055; text-shadow: 0 0 10px #FF0055; } 
         #p2-score { color: #00CCFF; text-shadow: 0 0 10px #00CCFF; }
-        
-        /* NOUVEAU : Le nom de la map */
         #map-display { position: absolute; top: 60px; width: 100%; text-align: center; font-size: 10px; color: #666; pointer-events: none; z-index: 10; letter-spacing: 2px; }
-
         #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; text-align: center; backdrop-filter: blur(5px); }
         .menu-box { background: #111; border: 4px solid #444; padding: 30px; display: flex; flex-direction: column; gap: 15px; min-width: 400px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-        
         input[type="text"], input[type="password"] { background: #000; border: 2px solid #444; color: white; padding: 12px; font-family: 'Press Start 2P'; font-size: 10px; outline: none; }
         button { background: #333; color: white; border: none; padding: 15px; font-family: 'Press Start 2P'; cursor: pointer; font-size: 10px; transition: 0.2s; }
         button:hover { background: #555; transform: scale(1.05); }
         button:active { transform: scale(0.95); }
-        
         .room-item { background: #222; padding: 10px; margin: 5px 0; display: flex; justify-content: space-between; align-items: center; font-size: 8px; border: 1px solid #444; }
         #error-msg { color: #FF0055; font-size: 10px; margin-top: 15px; height: 20px; }
         .scanlines { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06)); background-size: 100% 4px, 3px 100%; pointer-events: none; z-index: 20; }
-        
         #settings-modal { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #1a1a1a; border: 4px solid #00CCFF; padding: 20px; z-index: 200; display: none; width: 500px; box-shadow: 0 0 30px #00CCFF; }
         .settings-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 10px; }
         input[type=range] { width: 150px; cursor: pointer; }
@@ -111,7 +105,11 @@
 
         let myPlayerId = null, otherPlayerId = null, gameActive = false, isPaused = true, keys = {};
         let remappingAction = null;
-        let currentMapIndex = 0; // Pour suivre quelle map est affichée
+        let currentMapIndex = 0;
+        
+        // Variables pour stocker les positions de départ de la map actuelle
+        let currentP1Start = {x: 100, y: 600};
+        let currentP2Start = {x: 1060, y: 600};
 
         const defaultControls = { up: 'w', left: 'a', down: 's', right: 'd', shoot: 'f', shield: 'g', spell: 'h' };
         let settings = { sfxVolume: 0.5, musicVolume: 0.3, controls: JSON.parse(JSON.stringify(defaultControls)) };
@@ -202,8 +200,13 @@
             document.getElementById('overlay').style.display = 'none';
             if(audioCtx.state === 'suspended') audioCtx.resume();
             Music.start(); isPaused = false; gameActive = true; 
-            currentMapIndex = 0; // On commence toujours par la Map 1
+            currentMapIndex = 0; 
             loadMap(currentMapIndex);
+            
+            // On s'assure que les joueurs sont à la bonne position dès le départ
+            p1.x = currentP1Start.x; p1.y = currentP1Start.y;
+            p2.x = currentP2Start.x; p2.y = currentP2Start.y;
+            
             update();
         });
 
@@ -304,11 +307,14 @@
             document.getElementById('p1-score').innerText = "P1: " + p1Score; document.getElementById('p2-score').innerText = "P2: " + p2Score;
             roundActive = false; 
             setTimeout(() => { 
-                // --- ROTATION DE MAP ---
+                // --- ROTATION DE MAP & RESPAWN SECURISE ---
                 currentMapIndex = (currentMapIndex + 1) % 4;
                 loadMap(currentMapIndex);
                 
-                p1 = new Player(100, 600, COLORS.p1, 1); p2 = new Player(1060, 600, COLORS.p2, 2); 
+                // On utilise les points de spawn définis dans la map
+                p1 = new Player(currentP1Start.x, currentP1Start.y, COLORS.p1, 1); 
+                p2 = new Player(currentP2Start.x, currentP2Start.y, COLORS.p2, 2); 
+                
                 bullets = []; drops = []; lasers = []; particles = []; winnerText = ""; roundActive = true; 
             }, 1500);
         }
@@ -417,43 +423,60 @@
             requestAnimationFrame(update);
         }
 
-        // --- NOUVEAU : DEFINITION DES 4 MAPS ---
-        const MAP_LAYOUTS = [
-            // MAP 1 (Originale)
-            [ 
-                new Platform(0, 680, 1200, 20), new Platform(150, 540, 300, 15), new Platform(750, 540, 300, 15), 
-                new Platform(560, 500, 80, 180, true), new Platform(0, 410, 200, 15), new Platform(1000, 410, 200, 15), 
-                new Platform(400, 410, 400, 15), new Platform(400, 360, 20, 50, true), new Platform(780, 360, 20, 50, true), 
-                new Platform(150, 280, 250, 15), new Platform(800, 280, 250, 15), new Platform(525, 250, 150, 15), 
-                new Platform(0, 150, 350, 15), new Platform(850, 150, 350, 15), new Platform(330, 100, 20, 50, true), 
-                new Platform(850, 100, 20, 50, true) 
-            ],
-            // MAP 2 (Sniper Valley)
-            [
-                new Platform(0, 680, 1200, 20), new Platform(0, 300, 200, 400, true), new Platform(1000, 300, 200, 400, true),
-                new Platform(200, 550, 150, 15), new Platform(850, 550, 150, 15), new Platform(450, 450, 300, 15),
-                new Platform(0, 280, 200, 20), new Platform(1000, 280, 200, 20), new Platform(350, 200, 500, 15)
-            ],
-            // MAP 3 (Sky Islands)
-            [
-                new Platform(100, 650, 200, 20), new Platform(900, 650, 200, 20), new Platform(500, 550, 200, 20),
-                new Platform(200, 400, 150, 15), new Platform(850, 400, 150, 15), new Platform(525, 300, 150, 15),
-                new Platform(300, 150, 100, 15), new Platform(800, 150, 100, 15), new Platform(0, 690, 1200, 10) // Sol de sécurité
-            ],
-            // MAP 4 (The Cage)
-            [
-                new Platform(0, 680, 1200, 20), new Platform(0, 0, 50, 700, true), new Platform(1150, 0, 50, 700, true),
-                new Platform(50, 100, 1100, 20), new Platform(150, 500, 900, 15), new Platform(300, 350, 600, 15),
-                new Platform(550, 350, 100, 150, true), new Platform(550, 200, 100, 15)
-            ]
+        // --- DEFINITION DES MAPS + POINTS DE DEPART (SPAWNS) ---
+        const MAP_CONFIGS = [
+            {
+                // MAP 1 (Originale) - Spawn Standard
+                platforms: [ 
+                    new Platform(0, 680, 1200, 20), new Platform(150, 540, 300, 15), new Platform(750, 540, 300, 15), 
+                    new Platform(560, 500, 80, 180, true), new Platform(0, 410, 200, 15), new Platform(1000, 410, 200, 15), 
+                    new Platform(400, 410, 400, 15), new Platform(400, 360, 20, 50, true), new Platform(780, 360, 20, 50, true), 
+                    new Platform(150, 280, 250, 15), new Platform(800, 280, 250, 15), new Platform(525, 250, 150, 15), 
+                    new Platform(0, 150, 350, 15), new Platform(850, 150, 350, 15), new Platform(330, 100, 20, 50, true), 
+                    new Platform(850, 100, 20, 50, true) 
+                ],
+                p1Start: {x: 100, y: 600},
+                p2Start: {x: 1060, y: 600}
+            },
+            {
+                // MAP 2 (Sniper Valley) - Spawn en hauteur pour éviter les murs du bas
+                platforms: [
+                    new Platform(0, 680, 1200, 20), new Platform(0, 300, 200, 400, true), new Platform(1000, 300, 200, 400, true),
+                    new Platform(200, 550, 150, 15), new Platform(850, 550, 150, 15), new Platform(450, 450, 300, 15),
+                    new Platform(0, 280, 200, 20), new Platform(1000, 280, 200, 20), new Platform(350, 200, 500, 15)
+                ],
+                p1Start: {x: 250, y: 450}, // Décalé vers la droite et le haut
+                p2Start: {x: 900, y: 450}  // Décalé vers la gauche et le haut
+            },
+            {
+                // MAP 3 (Sky Islands) - Spawn sur les îles
+                platforms: [
+                    new Platform(100, 650, 200, 20), new Platform(900, 650, 200, 20), new Platform(500, 550, 200, 20),
+                    new Platform(200, 400, 150, 15), new Platform(850, 400, 150, 15), new Platform(525, 300, 150, 15),
+                    new Platform(300, 150, 100, 15), new Platform(800, 150, 100, 15), new Platform(0, 690, 1200, 10) 
+                ],
+                p1Start: {x: 150, y: 550},
+                p2Start: {x: 950, y: 550}
+            },
+            {
+                // MAP 4 (The Cage) - Spawn à l'intérieur
+                platforms: [
+                    new Platform(0, 680, 1200, 20), new Platform(0, 0, 50, 700, true), new Platform(1150, 0, 50, 700, true),
+                    new Platform(50, 100, 1100, 20), new Platform(150, 500, 900, 15), new Platform(300, 350, 600, 15),
+                    new Platform(550, 350, 100, 150, true), new Platform(550, 200, 100, 15)
+                ],
+                p1Start: {x: 100, y: 600},
+                p2Start: {x: 1000, y: 600}
+            }
         ];
 
         function loadMap(index) {
-            platforms = MAP_LAYOUTS[index];
+            platforms = MAP_CONFIGS[index].platforms;
+            currentP1Start = MAP_CONFIGS[index].p1Start;
+            currentP2Start = MAP_CONFIGS[index].p2Start;
             document.getElementById('map-display').innerText = "MAP " + (index + 1);
         }
 
-        // Chargement initial
         loadMap(0);
 
     </script>
