@@ -423,10 +423,10 @@
             requestAnimationFrame(update);
         }
 
-        // --- DEFINITION DES MAPS + POINTS DE DEPART (SPAWNS) ---
+// --- DEFINITION DES MAPS + POINTS DE DEPART (SPAWNS) ---
         const MAP_CONFIGS = [
             {
-                // MAP 1 (Originale) - Spawn Standard
+                // MAP 1 (Originale)
                 platforms: [ 
                     new Platform(0, 680, 1200, 20), new Platform(150, 540, 300, 15), new Platform(750, 540, 300, 15), 
                     new Platform(560, 500, 80, 180, true), new Platform(0, 410, 200, 15), new Platform(1000, 410, 200, 15), 
@@ -439,17 +439,17 @@
                 p2Start: {x: 1060, y: 600}
             },
             {
-                // MAP 2 (Sniper Valley) - Spawn en hauteur pour éviter les murs du bas
+                // MAP 2 (Sniper Valley)
                 platforms: [
                     new Platform(0, 680, 1200, 20), new Platform(0, 300, 200, 400, true), new Platform(1000, 300, 200, 400, true),
                     new Platform(200, 550, 150, 15), new Platform(850, 550, 150, 15), new Platform(450, 450, 300, 15),
                     new Platform(0, 280, 200, 20), new Platform(1000, 280, 200, 20), new Platform(350, 200, 500, 15)
                 ],
-                p1Start: {x: 250, y: 450}, // Décalé vers la droite et le haut
-                p2Start: {x: 900, y: 450}  // Décalé vers la gauche et le haut
+                p1Start: {x: 250, y: 450}, 
+                p2Start: {x: 900, y: 450} 
             },
             {
-                // MAP 3 (Sky Islands) - Spawn sur les îles
+                // MAP 3 (Sky Islands)
                 platforms: [
                     new Platform(100, 650, 200, 20), new Platform(900, 650, 200, 20), new Platform(500, 550, 200, 20),
                     new Platform(200, 400, 150, 15), new Platform(850, 400, 150, 15), new Platform(525, 300, 150, 15),
@@ -459,14 +459,75 @@
                 p2Start: {x: 950, y: 550}
             },
             {
-                // MAP 4 (The Cage) - Spawn à l'intérieur
+                // MAP 4 (The Cage - Corrigée)
                 platforms: [
                     new Platform(0, 680, 1200, 20), new Platform(0, 0, 50, 700, true), new Platform(1150, 0, 50, 700, true),
-                    new Platform(50, 100, 1100, 20), new Platform(150, 500, 900, 15), new Platform(300, 350, 600, 15),
+                    new Platform(50, 100, 1100, 20), new Platform(150, 500, 900, 15), 
+                    // Ajout d'escaliers sur les côtés pour monter :
+                    new Platform(150, 420, 100, 15), new Platform(950, 420, 100, 15),
+                    new Platform(300, 350, 600, 15),
                     new Platform(550, 350, 100, 150, true), new Platform(550, 200, 100, 15)
                 ],
                 p1Start: {x: 100, y: 600},
                 p2Start: {x: 1000, y: 600}
+            },
+            {
+                // MAP 5 (The Pit - Le Fossé)
+                platforms: [
+                    new Platform(0, 600, 300, 100, true), new Platform(900, 600, 300, 100, true), // Sol gauche/droite
+                    new Platform(500, 500, 200, 15), // Île centrale basse
+                    new Platform(350, 350, 100, 15), new Platform(750, 350, 100, 15), // Plateformes aériennes
+                    new Platform(550, 200, 100, 15) // Sommet
+                ],
+                p1Start: {x: 50, y: 500},
+                p2Start: {x: 1050, y: 500}
+            },
+            {
+                // MAP 6 (Stairway to Heaven - L'Escalier)
+                platforms: [
+                    new Platform(0, 680, 1200, 20), // Sol
+                    new Platform(100, 550, 150, 15), new Platform(300, 450, 150, 15),
+                    new Platform(500, 350, 150, 15), new Platform(700, 250, 150, 15),
+                    new Platform(900, 150, 150, 15), // Tout en haut
+                    new Platform(0, 0, 50, 700, true) // Mur gauche pour coincer
+                ],
+                p1Start: {x: 100, y: 600},
+                p2Start: {x: 950, y: 50}
+            },
+            {
+                // MAP 7 (Tunnel Vision - Plafond bas)
+                platforms: [
+                    new Platform(0, 600, 1200, 100, true), // Sol épais
+                    new Platform(0, 0, 1200, 300, true),   // Plafond très bas et épais
+                    new Platform(300, 520, 50, 80, true),  // Obstacle sol 1
+                    new Platform(800, 520, 50, 80, true),  // Obstacle sol 2
+                    new Platform(550, 300, 100, 100, true) // Stalactite milieu
+                ],
+                p1Start: {x: 100, y: 500},
+                p2Start: {x: 1000, y: 500}
+            },
+            {
+                // MAP 8 (The Pyramid)
+                platforms: [
+                    new Platform(0, 680, 1200, 20), // Sol
+                    new Platform(100, 580, 1000, 100, true), // Base large
+                    new Platform(250, 480, 700, 100, true),  // Etage 2
+                    new Platform(400, 380, 400, 100, true),  // Etage 3
+                    new Platform(550, 280, 100, 100, true)   // Sommet
+                ],
+                p1Start: {x: 50, y: 600},
+                p2Start: {x: 1100, y: 600}
+            },
+            {
+                // MAP 9 (Minimalist - 3 Piliers)
+                platforms: [
+                    new Platform(200, 400, 100, 300, true), // Pilier gauche
+                    new Platform(550, 500, 100, 200, true), // Pilier milieu (plus bas)
+                    new Platform(900, 400, 100, 300, true), // Pilier droite
+                    new Platform(0, 690, 1200, 10)          // Sol de sécurité (lave?)
+                ],
+                p1Start: {x: 220, y: 300},
+                p2Start: {x: 920, y: 300}
             }
         ];
 
