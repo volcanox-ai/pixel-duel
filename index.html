@@ -308,7 +308,7 @@
             roundActive = false; 
             setTimeout(() => { 
                 // --- ROTATION DE MAP & RESPAWN SECURISE ---
-                currentMapIndex = (currentMapIndex + 1) % 4;
+                currentMapIndex = (currentMapIndex + 1) % MAP_CONFIGS.length;
                 loadMap(currentMapIndex);
                 
                 // On utilise les points de spawn définis dans la map
