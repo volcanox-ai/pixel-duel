@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Pixel Duel - Online Rooms</title>
+    <title>Pixel Duel - Map Rotation</title>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <style>
@@ -12,6 +12,10 @@
         .ui { position: absolute; top: 20px; width: 100%; display: flex; justify-content: space-between; padding: 0 60px; box-sizing: border-box; font-size: 24px; pointer-events: none; z-index: 10; text-shadow: 0 0 5px black; }
         #p1-score { color: #FF0055; text-shadow: 0 0 10px #FF0055; } 
         #p2-score { color: #00CCFF; text-shadow: 0 0 10px #00CCFF; }
+        
+        /* NOUVEAU : Le nom de la map */
+        #map-display { position: absolute; top: 60px; width: 100%; text-align: center; font-size: 10px; color: #666; pointer-events: none; z-index: 10; letter-spacing: 2px; }
+
         #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; text-align: center; backdrop-filter: blur(5px); }
         .menu-box { background: #111; border: 4px solid #444; padding: 30px; display: flex; flex-direction: column; gap: 15px; min-width: 400px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
         
@@ -73,13 +77,17 @@
             <button class="close-btn" onclick="toggleSettings()">FERMER & SAUVEGARDER</button>
         </div>
 
-        <div class="ui"><span id="p1-score">P1: 0</span><span id="p2-score">P2: 0</span></div>
+        <div class="ui">
+            <span id="p1-score">P1: 0</span>
+            <span id="p2-score">P2: 0</span>
+        </div>
+        <div id="map-display">MAP 1</div>
+
         <canvas id="canvas" width="1200" height="700"></canvas>
         <div class="scanlines"></div>
     </div>
 
     <script>
-        // Remplace bien cette URL si elle change sur Render
         const socket = io("https://pixel-duel.onrender.com");
         const statusDiv = document.getElementById('server-status');
 
@@ -103,56 +111,43 @@
 
         let myPlayerId = null, otherPlayerId = null, gameActive = false, isPaused = true, keys = {};
         let remappingAction = null;
+        let currentMapIndex = 0; // Pour suivre quelle map est affichée
 
         const defaultControls = { up: 'w', left: 'a', down: 's', right: 'd', shoot: 'f', shield: 'g', spell: 'h' };
-        // On initialise, mais on va tout de suite essayer de charger la sauvegarde
         let settings = { sfxVolume: 0.5, musicVolume: 0.3, controls: JSON.parse(JSON.stringify(defaultControls)) };
 
-        // --- NOUVEAU : SYSTÈME DE SAUVEGARDE ---
-        function saveSettings() {
-            localStorage.setItem('pixelDuelSettings', JSON.stringify(settings));
-        }
-
+        function saveSettings() { localStorage.setItem('pixelDuelSettings', JSON.stringify(settings)); }
         function loadSettings() {
             const saved = localStorage.getItem('pixelDuelSettings');
             if (saved) {
                 try {
                     const parsed = JSON.parse(saved);
-                    // On garde les valeurs par défaut si certaines manquent
                     if(parsed.sfxVolume !== undefined) settings.sfxVolume = parsed.sfxVolume;
                     if(parsed.musicVolume !== undefined) settings.musicVolume = parsed.musicVolume;
                     if(parsed.controls) settings.controls = parsed.controls;
-                } catch(e) {
-                    console.error("Erreur de chargement des paramètres", e);
-                }
+                } catch(e) { console.error(e); }
             }
-            // On met à jour les sliders et les boutons
             document.getElementById('vol-music').value = settings.musicVolume;
             document.getElementById('vol-sfx').value = settings.sfxVolume;
             updateKeyButtons();
         }
-
-        // On lance le chargement au démarrage
         loadSettings();
 
         function toggleSettings() {
             const modal = document.getElementById('settings-modal');
             modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
         }
-
         function updateVolume() {
             settings.musicVolume = parseFloat(document.getElementById('vol-music').value);
             settings.sfxVolume = parseFloat(document.getElementById('vol-sfx').value);
-            saveSettings(); // On sauvegarde dès qu'on change le volume
+            saveSettings();
         }
-
         function remapKey(action) {
             remappingAction = action;
             const btn = document.getElementById('btn-' + action);
             btn.innerText = "APPUYEZ...";
             btn.classList.add('listening');
         }
-
         function updateKeyButtons() {
             for (const [action, key] of Object.entries(settings.controls)) {
                 const btn = document.getElementById('btn-' + action);
@@ -160,7 +155,6 @@
             }
         }
 
-        // --- RESEAU ---
         function createRoom() {
             const name = document.getElementById('room-name').value;
             const pass = document.getElementById('room-pass').value;
@@ -207,7 +201,10 @@
         socket.on('start-game', () => {
             document.getElementById('overlay').style.display = 'none';
             if(audioCtx.state === 'suspended') audioCtx.resume();
-            Music.start(); isPaused = false; gameActive = true; update();
+            Music.start(); isPaused = false; gameActive = true; 
+            currentMapIndex = 0; // On commence toujours par la Map 1
+            loadMap(currentMapIndex);
+            update();
         });
 
         socket.on('player-killed', (targetId) => {
@@ -218,7 +215,6 @@
         socket.on('opponent-disconnected', () => { alert("Adversaire déconnecté !"); location.reload(); });
         refreshRooms();
 
-        // --- AUDIO ---
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const Music = {
             nextNoteTime: 0, noteIndex: 0, isPlaying: false, tempo: 0.18,
@@ -232,7 +228,6 @@
         function playSound(f, t, d, v, s = 0) { if (audioCtx.state === 'suspended') audioCtx.resume(); const globalVol = v * settings.sfxVolume; if (globalVol <= 0.01) return; const osc = audioCtx.createOscillator(); const g = audioCtx.createGain(); osc.type = t; osc.frequency.setValueAtTime(f, audioCtx.currentTime); if (s) osc.frequency.exponentialRampToValueAtTime(s, audioCtx.currentTime + d); g.gain.setValueAtTime(globalVol, audioCtx.currentTime); g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + d); osc.connect(g); g.connect(audioCtx.destination); osc.start(); osc.stop(audioCtx.currentTime + d); }
         const SFX = { jump:()=>playSound(150,'triangle',0.1,0.2,300), shoot:()=>playSound(400,'square',0.1,0.05,100), sniper:()=>playSound(800,'sawtooth',0.3,0.05,50), shotgun:()=>playSound(100,'sawtooth',0.2,0.3,20), dash:()=>playSound(200,'sawtooth',0.2,0.2,800), laser:()=>playSound(1200,'sine',0.5,0.2,800), shield:()=>playSound(900,'sine',0.3,0.1,1200), death:()=>playSound(60,'sawtooth',0.6,0.4,10), pickup:()=>playSound(1000,'triangle',0.1,0.1,1500) };
 
-        // --- MOTEUR ---
         const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
         const COLORS = { p1: '#FF0055', p2: '#00CCFF', gold: '#FFFF00', purple: '#FF00FF', shotgun: '#00FFFF', green: '#00FF00', fire: '#FF4400', white: '#FFFFFF' };
         let p1Score = 0, p2Score = 0, platforms = [], bullets = [], drops = [], lasers = [], particles = [], dropTimer = 0, roundActive = true, winnerText = "";
@@ -309,6 +304,10 @@
             document.getElementById('p1-score').innerText = "P1: " + p1Score; document.getElementById('p2-score').innerText = "P2: " + p2Score;
             roundActive = false; 
             setTimeout(() => { 
+                // --- ROTATION DE MAP ---
+                currentMapIndex = (currentMapIndex + 1) % 4;
+                loadMap(currentMapIndex);
+                
                 p1 = new Player(100, 600, COLORS.p1, 1); p2 = new Player(1060, 600, COLORS.p2, 2); 
                 bullets = []; drops = []; lasers = []; particles = []; winnerText = ""; roundActive = true; 
             }, 1500);
@@ -322,7 +321,7 @@
                     document.getElementById('btn-' + remappingAction).classList.remove('listening');
                     remappingAction = null;
                     updateKeyButtons();
-                    saveSettings(); // ON SAUVEGARDE LA TOUCHE
+                    saveSettings();
                 }
                 return;
             }
@@ -418,7 +417,45 @@
             requestAnimationFrame(update);
         }
 
-        platforms = [ new Platform(0, 680, 1200, 20), new Platform(150, 540, 300, 15), new Platform(750, 540, 300, 15), new Platform(560, 500, 80, 180, true), new Platform(0, 410, 200, 15), new Platform(1000, 410, 200, 15), new Platform(400, 410, 400, 15), new Platform(400, 360, 20, 50, true), new Platform(780, 360, 20, 50, true), new Platform(150, 280, 250, 15), new Platform(800, 280, 250, 15), new Platform(525, 250, 150, 15), new Platform(0, 150, 350, 15), new Platform(850, 150, 350, 15), new Platform(330, 100, 20, 50, true), new Platform(850, 100, 20, 50, true) ];
+        // --- NOUVEAU : DEFINITION DES 4 MAPS ---
+        const MAP_LAYOUTS = [
+            // MAP 1 (Originale)
+            [ 
+                new Platform(0, 680, 1200, 20), new Platform(150, 540, 300, 15), new Platform(750, 540, 300, 15), 
+                new Platform(560, 500, 80, 180, true), new Platform(0, 410, 200, 15), new Platform(1000, 410, 200, 15), 
+                new Platform(400, 410, 400, 15), new Platform(400, 360, 20, 50, true), new Platform(780, 360, 20, 50, true), 
+                new Platform(150, 280, 250, 15), new Platform(800, 280, 250, 15), new Platform(525, 250, 150, 15), 
+                new Platform(0, 150, 350, 15), new Platform(850, 150, 350, 15), new Platform(330, 100, 20, 50, true), 
+                new Platform(850, 100, 20, 50, true) 
+            ],
+            // MAP 2 (Sniper Valley)
+            [
+                new Platform(0, 680, 1200, 20), new Platform(0, 300, 200, 400, true), new Platform(1000, 300, 200, 400, true),
+                new Platform(200, 550, 150, 15), new Platform(850, 550, 150, 15), new Platform(450, 450, 300, 15),
+                new Platform(0, 280, 200, 20), new Platform(1000, 280, 200, 20), new Platform(350, 200, 500, 15)
+            ],
+            // MAP 3 (Sky Islands)
+            [
+                new Platform(100, 650, 200, 20), new Platform(900, 650, 200, 20), new Platform(500, 550, 200, 20),
+                new Platform(200, 400, 150, 15), new Platform(850, 400, 150, 15), new Platform(525, 300, 150, 15),
+                new Platform(300, 150, 100, 15), new Platform(800, 150, 100, 15), new Platform(0, 690, 1200, 10) // Sol de sécurité
+            ],
+            // MAP 4 (The Cage)
+            [
+                new Platform(0, 680, 1200, 20), new Platform(0, 0, 50, 700, true), new Platform(1150, 0, 50, 700, true),
+                new Platform(50, 100, 1100, 20), new Platform(150, 500, 900, 15), new Platform(300, 350, 600, 15),
+                new Platform(550, 350, 100, 150, true), new Platform(550, 200, 100, 15)
+            ]
+        ];
+
+        function loadMap(index) {
+            platforms = MAP_LAYOUTS[index];
+            document.getElementById('map-display').innerText = "MAP " + (index + 1);
+        }
+
+        // Chargement initial
+        loadMap(0);
+
     </script>
 </body>
 </html>
